@@ -66,10 +66,25 @@ scheduler/  weekly cron trigger + silent-channel watchdog
 ```
 
 **Data flow — ingestion**: `ReportTelegramBot` (long-polling `channel_post` updates) → filters to
-`.xlsx` documents from the configured source channel → downloads via `TelegramClient` →
-`IngestionService.ingest()`: checks `ingested_files.telegram_file_id` for idempotency, then
-`MonthlyReportParser.parse()` → `DailyMetricRepository.upsertAll()` (batched `ON CONFLICT DO UPDATE`
-on `(pharmacy_code, metric_num, metric_date)`) → records an `ingested_files` audit row.
+`.xlsx` documents from the configured source channel → downloads via `TelegramClient` into a temp
+file (deleted in a `finally`, so nothing accumulates on disk) → `IngestionService.ingest()`: checks
+`ingested_files.telegram_file_id` for idempotency, then `MonthlyReportParser.parse(path, consumer)`
+streams rows into `IngestionService.ChunkedWriter`, which flushes them to
+`DailyMetricRepository.upsertAll()` every 10k rows (batched `ON CONFLICT DO UPDATE` on
+`(pharmacy_code, metric_num, metric_date)`) → records an `ingested_files` audit row. All in one
+transaction: either the whole file landed plus its audit row, or nothing.
+
+**Ingestion is memory-bound, and that is why it's streamed end to end.** A month's file holds ~1.7M
+values; the original `new XSSFWorkbook(InputStream)` + `List<MetricRow>` approach peaked near a
+gigabyte and the kernel OOM-killer kept SIGKILLing the container mid-parse (no stacktrace in the
+logs, just a fresh Spring banner, and the day's file lost for good — Telegram confirms the update
+offset on receipt, not after processing). So: parse via SAX (`XSSFReader`, not usermodel), open from
+a `Path` (`OPCPackage.open(File)` reads zip entries lazily; from an `InputStream` POI buffers the
+whole archive), and never hold more than one chunk of rows. Measured live heap mid-parse on a
+1.65M-value file: ~16MB. Don't reintroduce a `List`-returning parse overload — that is the exact
+shape that caused the outage. `app` also gets `mem_limit` + `-XX:MaxRAMPercentage` in
+`docker-compose.yml` so any future overrun surfaces as a logged `OutOfMemoryError` instead of a
+silent kill; `DivisionsFileParser`/`DaribarCrosswalkParser` stay on usermodel (their files are tiny).
 
 **Data flow — reporting**: `WeeklyReportScheduler` (`@Scheduled` cron from `weekly-report.cron`/
 `.timezone`) → `WeeklyReportService.generateAndSendWeeklyReport()`: computes current/previous
@@ -106,7 +121,9 @@ later than the current one is assumed to be the previous year (handles a "Дек
 in January). Header row is located dynamically by scanning for a "Код аптеки" cell (within the first
 10 rows), and day columns are whatever numeric-labeled columns follow — `"Итого"`/`"Есть данные"`
 columns are recognized and skipped. Row processing stops at the first row with an empty pharmacy
-code.
+code, or at a gap in the sheet's row numbering (`<row r="…">` jumping ahead means the row isn't in
+the file at all — this is the streaming equivalent of the old `sheet.getRow(i) == null` check, and
+both are covered by `MonthlyReportParserTest`).
 
 **Divisions sheet and branch_code resolution**: two reference spreadsheets, loaded once at
 application startup (not on the weekly schedule) by `ReferenceDataLoader` (`ApplicationRunner`),

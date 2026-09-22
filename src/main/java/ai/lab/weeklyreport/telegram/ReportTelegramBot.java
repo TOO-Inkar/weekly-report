@@ -2,6 +2,9 @@ package ai.lab.weeklyreport.telegram;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 
 import org.slf4j.Logger;
@@ -73,11 +76,29 @@ public class ReportTelegramBot implements SpringLongPollingBot, LongPollingSingl
         }
     }
 
+    /**
+     * Файл сначала кладётся во временный файл, и только потом отдаётся в разбор: потоковый
+     * парсер работает поверх {@code OPCPackage.open(File)}, который читает записи zip лениво,
+     * тогда как открытие из {@code InputStream} вычитало бы весь архив в память (на файле за
+     * месяц это сотни мегабайт - см. {@link ai.lab.weeklyreport.excel.MonthlyReportParser}).
+     * Временный файл удаляется в {@code finally}, то есть живёт только на время обработки и
+     * не остаётся на диске ни при успехе, ни при ошибке.
+     */
     private void downloadAndIngest(Document document, String fileName) throws TelegramApiException, IOException {
         org.telegram.telegrambots.meta.api.objects.File telegramFile = telegramClient.execute(new GetFile(document.getFileId()));
-        try (InputStream inputStream = telegramClient.downloadFileAsStream(telegramFile)) {
-            log.info("Скачан файл '{}' из Telegram, начинаю обработку", fileName);
-            ingestionService.ingest(document.getFileId(), fileName, inputStream);
+        Path spooled = Files.createTempFile("monthly_report-", ".xlsx");
+        try {
+            try (InputStream inputStream = telegramClient.downloadFileAsStream(telegramFile)) {
+                Files.copy(inputStream, spooled, StandardCopyOption.REPLACE_EXISTING);
+            }
+            log.info("Скачан файл '{}' из Telegram ({} КБ), начинаю обработку", fileName, Files.size(spooled) / 1024);
+            ingestionService.ingest(document.getFileId(), fileName, spooled);
+        } finally {
+            try {
+                Files.deleteIfExists(spooled);
+            } catch (IOException e) {
+                log.warn("Не удалось удалить временный файл {}", spooled, e);
+            }
         }
     }
 
