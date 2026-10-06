@@ -45,4 +45,22 @@ public class EmailSender {
             throw e;
         }
     }
+
+    /** Короткое текстовое уведомление без вложения (например, о том, что отчёт не дошёл в Telegram). */
+    public void sendNotification(List<String> recipients, String subject, String bodyText)
+            throws MessagingException, MailException {
+        String fromAddress = mailSender.getUsername();
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");
+            helper.setFrom(fromAddress);
+            helper.setTo(recipients.toArray(new String[0]));
+            helper.setSubject(subject);
+            helper.setText(bodyText);
+            mailSender.send(message);
+        } catch (MessagingException | MailException e) {
+            log.error(SmtpFailureClassifier.describe(e, mailSender.getHost(), mailSender.getPort(), fromAddress), e);
+            throw e;
+        }
+    }
 }

@@ -62,7 +62,7 @@ excel/      monthly_report.xlsx / divisions.xlsx / daribar_crosswalk.xlsx parsin
 repository/ JdbcTemplate: batch upsert daily_metrics, pharmacy_directory/daribar_crosswalk reference data, division report aggregates, ingested_files audit
 service/    orchestration: file ingestion, startup reference-data loading, weekly report assembly/send
 telegram/   bot (receives files) + sender (messages/documents)
-scheduler/  weekly cron trigger + silent-channel watchdog
+scheduler/  weekly cron trigger, startup catch-up of a missed run, silent-channel watchdog
 ```
 
 **Data flow — ingestion**: `ReportTelegramBot` (long-polling `channel_post` updates) → filters to
@@ -97,9 +97,16 @@ current week only, no prior-week comparison - and "4. Сводный"; every she
 band via `WeeklyReportGenerator.writeTitleBand()`, and `ReportStyles` centralizes the whole
 dark-navy/accent-blue design system as POI cell styles - this design mirrors a hand-built reference
 file the business supplied, not an arbitrary choice, so changes here should stay visually consistent
-with it), sends via `TelegramSender.sendDocument()`. Failures are logged with full stacktrace and a
-short error message is also sent to the reports chat (`WeeklyReportScheduler.notifyFailure`), so
-failures are visible without digging through logs.
+with it), sends via `TelegramSender.sendDocument()` and `EmailSender.sendReport()`. The scheduler goes through
+`WeeklyReportDeliveryRunner`: bounded retries with backoff (`weekly-report.delivery.*`, default 7
+attempts over ~1.5h) for DB/Telegram/SMTP failures; `WeeklyReportService.deliver(week)` is idempotent
+per channel via `weekly_report_deliveries` (week_start, channel), so retries never resend a channel
+that already succeeded. After the last failed attempt a failure message goes to both the reports chat
+and the email recipients (each best-effort). `WeeklyReportCatchUp` (`ApplicationRunner`, own virtual
+thread) re-runs the most recent missed cron fire on startup if its week isn't fully delivered - skipped
+while the journal is empty, to avoid re-sending a pre-journal report right after deploy. Waiting between
+retries blocks the calling thread - fine because virtual threads make Spring use
+`SimpleAsyncTaskScheduler` (a new thread per execution), so `IngestionWatchdog` isn't blocked.
 
 **Ingestion watchdog**: `IngestionWatchdog` runs on a fixed rate (`ingestion-watchdog.check-interval`),
 compares `now` against `IngestedFileRepository.findLastIngestedAt()`. Alerts once per "silence

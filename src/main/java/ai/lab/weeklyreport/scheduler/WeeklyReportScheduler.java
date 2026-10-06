@@ -1,53 +1,50 @@
 package ai.lab.weeklyreport.scheduler;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneId;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import ai.lab.weeklyreport.config.TelegramProperties;
-import ai.lab.weeklyreport.service.WeeklyReportService;
-import ai.lab.weeklyreport.telegram.TelegramSender;
+import ai.lab.weeklyreport.config.WeeklyReportProperties;
+import ai.lab.weeklyreport.excel.WeekRange;
+import ai.lab.weeklyreport.service.WeeklyReportDeliveryRunner;
 
 /**
  * Раз в неделю (расписание берётся из конфига, а не хардкодится здесь - см. weekly-report.cron/timezone)
- * запускает генерацию и отправку недельного отчёта. Если что-то падает - полный стектрейс идёт в лог,
- * а короткое сообщение об ошибке - в тот же Telegram-чат, чтобы сбой было видно сразу, а не только в логах.
+ * запускает формирование и отправку недельного отчёта. Повторные попытки при временных сбоях и
+ * уведомление о финальном сбое (в Telegram и на почту) - в {@link WeeklyReportDeliveryRunner};
+ * пропущенный из-за простоя запуск догоняется при старте - см. {@link WeeklyReportCatchUp}.
  */
 @Component
 public class WeeklyReportScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(WeeklyReportScheduler.class);
 
-    private final WeeklyReportService weeklyReportService;
-    private final TelegramSender telegramSender;
-    private final TelegramProperties telegramProperties;
+    private final WeeklyReportDeliveryRunner deliveryRunner;
+    private final WeeklyReportProperties properties;
+    private final Clock clock;
 
-    public WeeklyReportScheduler(WeeklyReportService weeklyReportService,
-                                  TelegramSender telegramSender,
-                                  TelegramProperties telegramProperties) {
-        this.weeklyReportService = weeklyReportService;
-        this.telegramSender = telegramSender;
-        this.telegramProperties = telegramProperties;
+    public WeeklyReportScheduler(WeeklyReportDeliveryRunner deliveryRunner,
+                                  WeeklyReportProperties properties,
+                                  Clock clock) {
+        this.deliveryRunner = deliveryRunner;
+        this.properties = properties;
+        this.clock = clock;
     }
 
     @Scheduled(cron = "${weekly-report.cron}", zone = "${weekly-report.timezone}")
     public void runWeeklyReport() {
         try {
-            weeklyReportService.generateAndSendWeeklyReport();
+            // Неделя фиксируется один раз на момент запуска (в таймзоне расписания) - все повторные
+            // попытки шлют отчёт именно за неё.
+            LocalDate today = LocalDate.now(clock.withZone(ZoneId.of(properties.timezone())));
+            deliveryRunner.deliverWithRetries(WeekRange.containingWeekBefore(today), "запуск по расписанию");
         } catch (Exception e) {
-            log.error("Не удалось сформировать/отправить недельный отчёт", e);
-            notifyFailure(e);
-        }
-    }
-
-    private void notifyFailure(Exception cause) {
-        try {
-            telegramSender.sendMessage(telegramProperties.reportChatId(),
-                    "Ошибка формирования недельного отчёта: " + cause.getMessage()
-                            + "\nПодробности - в логах приложения.");
-        } catch (Exception sendError) {
-            log.error("Не удалось отправить сообщение об ошибке в Telegram", sendError);
+            log.error("Непредвиденная ошибка планового запуска недельного отчёта", e);
         }
     }
 }

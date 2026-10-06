@@ -42,6 +42,13 @@ weekly-report:
   daribar-crosswalk-path: ${DARIBAR_CROSSWALK_PATH}
   email:
     recipients: ${WEEKLY_REPORT_EMAIL_RECIPIENTS:}
+  # Повторы при временных сбоях Telegram/SMTP/БД и догоняющий запуск после простоя
+  # (см. WeeklyReportDeliveryProperties): паузы 2, 4, 8, 16, 30, 30 мин - ~1.5 ч на 7 попыток.
+  delivery:
+    max-attempts: ${WEEKLY_REPORT_DELIVERY_MAX_ATTEMPTS:7}
+    initial-backoff: ${WEEKLY_REPORT_DELIVERY_INITIAL_BACKOFF:2m}
+    max-backoff: ${WEEKLY_REPORT_DELIVERY_MAX_BACKOFF:30m}
+    catch-up-on-startup: ${WEEKLY_REPORT_CATCH_UP_ON_STARTUP:true}
 
 ingestion-watchdog:
   max-silence: ${INGESTION_WATCHDOG_MAX_SILENCE:26h}
