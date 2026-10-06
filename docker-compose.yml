@@ -41,6 +41,8 @@ services:
       SMTP_USER: ${SMTP_USER:-weekly-report@inkar.kz}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       WEEKLY_REPORT_EMAIL_RECIPIENTS: ${WEEKLY_REPORT_EMAIL_RECIPIENTS:-}
+      # "-" без ":" намеренно: не задано -> список по умолчанию, задано пустым -> статус-письма выключены.
+      WEEKLY_REPORT_NOTIFY_RECIPIENTS: ${WEEKLY_REPORT_NOTIFY_RECIPIENTS-it@inkar.kz,m.muratbekuly@inkar.kz,t.kessikov@inkar.kz}
     volumes:
       - ./data:/data:ro
 

@@ -87,6 +87,8 @@ src/main/resources/db/migration/  - Flyway-миграции
 | `POSTGRES_PORT`                | Порт на хосте для Postgres из docker-compose (только для docker-compose, см. ниже) | `6868` |
 | `WEEKLY_REPORT_CRON`           | Cron-расписание генерации отчёта                       | `0 0 9 * * MON`            |
 | `WEEKLY_REPORT_TIMEZONE`       | Таймзона для cron                                      | `Asia/Almaty`              |
+| `WEEKLY_REPORT_EMAIL_RECIPIENTS` | Кому слать сам файл отчёта на почту (через запятую); пусто - только Telegram | пусто |
+| `WEEKLY_REPORT_NOTIFY_RECIPIENTS` | Кому слать короткое статус-письмо без вложения после каждого цикла доставки (успех/финальный сбой); задано пустым - выключено | `it@inkar.kz,m.muratbekuly@inkar.kz,t.kessikov@inkar.kz` |
 | `WEEKLY_REPORT_DELIVERY_MAX_ATTEMPTS` | Сколько всего попыток доставки отчёта при временных сбоях | `7` |
 | `WEEKLY_REPORT_DELIVERY_INITIAL_BACKOFF` | Пауза перед 2-й попыткой (дальше удваивается)        | `2m`                       |
 | `WEEKLY_REPORT_DELIVERY_MAX_BACKOFF` | Потолок паузы между попытками                          | `30m`                      |
@@ -113,7 +115,15 @@ src/main/resources/db/migration/  - Flyway-миграции
   продублировать отчёт, отправленный до деплоя.
 - **Уведомление о финальном сбое.** Если все попытки исчерпаны, сообщение с причиной уходит и в
   Telegram-чат отчётов, и получателям `WEEKLY_REPORT_EMAIL_RECIPIENTS` - так о сбое Telegram
-  узнают по почте, о сбое почты - в Telegram. Всё дополнительно логируется (ERROR).
+  узнают по почте, о сбое почты - в Telegram. Письмо о сбое уходит и получателям
+  `WEEKLY_REPORT_NOTIFY_RECIPIENTS`, даже если `WEEKLY_REPORT_EMAIL_RECIPIENTS` пуст. Всё
+  дополнительно логируется (ERROR).
+- **Статус-письмо.** После каждого цикла, в котором отчёт реально отправлялся (плановый или
+  догоняющий запуск), получателям `WEEKLY_REPORT_NOTIFY_RECIPIENTS` уходит короткое письмо без
+  вложения: "успешно отправлен" (каналы, имя файла, время) или уведомление о финальном сбое. Если
+  отправлять было нечего (всё уже доставлено) - письма нет. Ошибка отправки статус-письма только
+  логируется и на доставку не влияет. SMTP-соединение проверяется при старте, если задан хотя бы
+  один из двух списков получателей.
 
 Healthcheck для контейнера `app` в `docker-compose.yml` не добавлен: в приложении нет HTTP-сервера
 и Spring Boot Actuator, а тянуть web + actuator ради одной проверки - лишний вес. Падение JVM и так

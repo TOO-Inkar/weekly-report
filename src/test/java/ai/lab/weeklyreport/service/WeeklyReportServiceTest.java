@@ -65,6 +65,7 @@ class WeeklyReportServiceTest {
 
         assertThat(result.isComplete()).isTrue();
         assertThat(result.delivered()).containsExactlyInAnyOrder(DeliveryChannel.TELEGRAM, DeliveryChannel.EMAIL);
+        assertThat(result.fileName()).isEqualTo("Недельный отчет по ПЛ и маркетплейсам (28.09-04.10).xlsx");
         verify(telegramSender).sendDocument(eq(REPORT_CHAT_ID), anyString(), eq(WORKBOOK), anyString());
         verify(emailSender).sendReport(eq(RECIPIENTS), anyString(), anyString(), anyString(), eq(WORKBOOK));
         verify(deliveryRepository).markDelivered(WEEK.start(), DeliveryChannel.TELEGRAM);
@@ -100,6 +101,7 @@ class WeeklyReportServiceTest {
 
         assertThat(result.isComplete()).isTrue();
         assertThat(result.delivered()).isEmpty();
+        assertThat(result.fileName()).isNull();
         verifyNoInteractions(generator, dailyMetricRepository, telegramSender, emailSender);
     }
 

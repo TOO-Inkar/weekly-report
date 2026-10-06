@@ -90,7 +90,7 @@ public class WeeklyReportService {
         if (pending.isEmpty()) {
             log.info("Недельный отчёт за {} - {} уже доставлен во все каналы, повторная отправка не нужна",
                     week.start(), week.end());
-            return new DeliveryResult(Set.of(), Map.of());
+            return new DeliveryResult(Set.of(), Map.of(), null);
         }
 
         WeekRange previousWeek = week.previousWeek();
@@ -138,7 +138,7 @@ public class WeeklyReportService {
                 failures.put(DeliveryChannel.EMAIL, e);
             }
         }
-        return new DeliveryResult(delivered, failures);
+        return new DeliveryResult(delivered, failures, fileName);
     }
 
     /**
@@ -155,8 +155,12 @@ public class WeeklyReportService {
         }
     }
 
-    /** Итог одной попытки: куда отчёт ушёл сейчас и какие каналы упали (с причиной). */
-    public record DeliveryResult(Set<DeliveryChannel> delivered, Map<DeliveryChannel, Exception> failures) {
+    /**
+     * Итог одной попытки: куда отчёт ушёл сейчас, какие каналы упали (с причиной) и имя файла
+     * отчёта ({@code null}, если отправлять было нечего - всё уже доставлено раньше).
+     */
+    public record DeliveryResult(Set<DeliveryChannel> delivered, Map<DeliveryChannel, Exception> failures,
+                                 String fileName) {
 
         public boolean isComplete() {
             return failures.isEmpty();

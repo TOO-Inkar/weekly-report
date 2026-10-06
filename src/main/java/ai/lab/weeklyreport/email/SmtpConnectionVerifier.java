@@ -8,11 +8,12 @@ import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.stereotype.Component;
 
 import ai.lab.weeklyreport.config.EmailProperties;
+import ai.lab.weeklyreport.config.NotifyProperties;
 
 /**
  * Проверяет SMTP-подключение (включая аутентификацию) один раз при старте приложения - но только
- * если задан хотя бы один получатель ({@code weekly-report.email.recipients}); если email-канал не
- * используется, проверка бессмысленна и пропускается. Как и сама отправка письма (см.
+ * если задан хотя бы один получатель отчёта ({@code weekly-report.email.recipients}) или статус-писем
+ * ({@code weekly-report.notify.recipients}); если почта не используется, проверка бессмысленна и пропускается. Как и сама отправка письма (см.
  * {@code WeeklyReportService}), это лучшая попытка поверх Telegram: неудачная проверка только
  * логируется и не мешает старту бота.
  */
@@ -23,16 +24,19 @@ public class SmtpConnectionVerifier implements ApplicationRunner {
 
     private final JavaMailSenderImpl mailSender;
     private final EmailProperties emailProperties;
+    private final NotifyProperties notifyProperties;
 
-    public SmtpConnectionVerifier(JavaMailSenderImpl mailSender, EmailProperties emailProperties) {
+    public SmtpConnectionVerifier(JavaMailSenderImpl mailSender, EmailProperties emailProperties,
+                                  NotifyProperties notifyProperties) {
         this.mailSender = mailSender;
         this.emailProperties = emailProperties;
+        this.notifyProperties = notifyProperties;
     }
 
     @Override
     public void run(ApplicationArguments args) {
-        if (emailProperties.recipients().isEmpty()) {
-            log.info("weekly-report.email.recipients пуст - email-канал выключен, проверка SMTP-соединения пропущена");
+        if (emailProperties.recipients().isEmpty() && notifyProperties.recipients().isEmpty()) {
+            log.info("weekly-report.email.recipients и weekly-report.notify.recipients пусты - почта не используется, проверка SMTP-соединения пропущена");
             return;
         }
         verify();

@@ -42,6 +42,10 @@ weekly-report:
   daribar-crosswalk-path: ${DARIBAR_CROSSWALK_PATH}
   email:
     recipients: ${WEEKLY_REPORT_EMAIL_RECIPIENTS:}
+  # Короткое статус-письмо (без вложения) после каждого цикла доставки: успех или финальный сбой.
+  # Отдельно от email.recipients - те получают сам файл отчёта.
+  notify:
+    recipients: ${WEEKLY_REPORT_NOTIFY_RECIPIENTS:it@inkar.kz,m.muratbekuly@inkar.kz,t.kessikov@inkar.kz}
   # Повторы при временных сбоях Telegram/SMTP/БД и догоняющий запуск после простоя
   # (см. WeeklyReportDeliveryProperties): паузы 2, 4, 8, 16, 30, 30 мин - ~1.5 ч на 7 попыток.
   delivery:
